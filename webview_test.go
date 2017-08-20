@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/user"
 	"testing"
-	"time"
 )
 
 var tmpl = template.Must(template.New("").Parse(`
@@ -41,7 +40,13 @@ var tmpl = template.Must(template.New("").Parse(`
 </html>
 `))
 
+func init() {
+	log.SetFlags(log.Lshortfile)
+}
+
 func TestUI(t *testing.T) {
+	StartGUI()
+	defer DestoryGUI()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
@@ -59,11 +64,25 @@ func TestUI(t *testing.T) {
 		log.Fatal(http.Serve(ln, nil))
 	}()
 
-	go func() {
-		time.Sleep(5 * time.Second)
-		Open("Hello", "http://"+ln.Addr().String(), 400, 300, false)
-	}()
-	Open("loading", "data:text/html,"+LoadingDoc, 1920, 1080, false)
+	wv0 := New("Test UI 0", nil)
+	wv1 := New("Test UI 1", nil)
+
+	wv0.LoadURI("http://google.com/ncr")
+
+	wv1.LoadHTML(LoadingDoc)
+
+	select {
+	case <-wv0.Done():
+	}
+	select {
+	case <-wv1.Done():
+	}
+	// select {
+	// case <-wv1.Done():
+	// }
+	// select {
+	// case <-wv1.Done():
+	// }
 }
 
 const LoadingDoc = `

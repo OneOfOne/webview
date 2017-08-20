@@ -4,19 +4,20 @@
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
-extern void close_handler();
-extern void start_handler();
-extern void wv_load_finished();
+extern void close_handler(guint64);
+extern void start_handler(guint64);
+extern void wv_load_finished(guint64, char *);
 extern void wv_load_status_changed();
 extern void in_gtk_main(guint64);
 
-static void webview_desroy_cb(GtkWidget *widget, gpointer parent) {
-	(void)widget;
-	close_handler();
-	gtk_main_quit();
+static gboolean window_close_cb(GtkWidget *widget, GdkEvent *event, gpointer parent) {
+	(void)widget; (void)event;
+
+	close_handler((guint64)parent);
+	return TRUE;
 }
 
-static gboolean webview_context_menu_cb(WebKitWebView *webview,
+static gboolean wv_context_menu_cb(WebKitWebView *webview,
 						GtkWidget *default_menu,
 						WebKitHitTestResult *hit_test_result,
 						gboolean triggered_with_keyboard,
@@ -26,19 +27,15 @@ static gboolean webview_context_menu_cb(WebKitWebView *webview,
 	(void)hit_test_result;
 	(void)triggered_with_keyboard;
 	(void)userdata;
+
 	return TRUE;
 }
 
-static void idle_add(guint64 v) {
-	g_idle_add((GSourceFunc)in_gtk_main, (gpointer)v);
-}
-
-static GtkWidget* window;
-static WebKitWebView *webview;
+static void idle_add(guint64 v) { g_idle_add((GSourceFunc)in_gtk_main, (gpointer)v); }
+static void timeout_add(guint64 v) { g_timeout_add(100, (GSourceFunc)in_gtk_main, (gpointer)v); }
 
 
-static void load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gpointer user_data) {
-	printf("loading %s %d\n", webkit_web_view_get_uri(webview),  load_event);
+static void wv_load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gpointer parent) {
 	switch (load_event) {
 		case WEBKIT_LOAD_STARTED:
 			break;
@@ -47,57 +44,84 @@ static void load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gpoin
 		case WEBKIT_LOAD_COMMITTED:
 			break;
 		case WEBKIT_LOAD_FINISHED:
-			// wv_load_finished();
+			wv_load_finished((guint64) parent, (char *)webkit_web_view_get_uri(wv));
 			break;
 		}
 }
 
-static WebKitSettings * const defaultSettings(const char *user_agent) {
-	WebKitSettings *settings = webkit_settings_new();
-	webkit_settings_set_enable_java(settings, false);
-	webkit_settings_set_enable_javascript(settings, true);
-	webkit_settings_set_enable_plugins(settings, false);
-	webkit_settings_set_enable_frame_flattening(settings, true);
-	webkit_settings_set_user_agent(settings, user_agent);
-	webkit_settings_set_enable_smooth_scrolling(settings, true);
-	webkit_settings_set_javascript_can_open_windows_automatically(settings, true);
+typedef struct {
+	gboolean EnableJava;
+	gboolean EnablePlugins;
+	gboolean EnableFrameFlattening;
+	gboolean EnableSmoothScrolling;
 
-	return settings;
+	gboolean EnableJavaScript;
+	gboolean EnableJavaScriptCanOpenWindows;
+	gboolean AllowModalDialogs;
+
+	gboolean EnableWriteConsoleMessagesToStdout;
+
+	gboolean Resizable;
+
+	int Width;
+	int Height;
+
+} settings_t;
+
+static GtkWidget *create_window() {
+	if (gtk_init_check(0, NULL) == FALSE) return NULL;
+	return gtk_window_new(GTK_WINDOW_TOPLEVEL);
 }
-static void create_window(const char *user_agent) {
-	if (gtk_init_check(0, NULL) == FALSE) return;
 
-	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-	g_signal_connect(G_OBJECT(window), "destroy", G_CALLBACK(webview_desroy_cb), NULL);
+static WebKitWebView *init_window(GtkWidget *window, const char *title, const char *user_agent, settings_t *s, guint64 parent) {
+	gtk_widget_hide_on_delete(window);
+	gtk_window_set_title(GTK_WINDOW(window), title);
 
-	webview = (WebKitWebView *)webkit_web_view_new_with_settings(defaultSettings(user_agent));
+	WebKitSettings *settings = webkit_settings_new();
+	webkit_settings_set_enable_java(settings, s->EnableJava);
+	webkit_settings_set_enable_plugins(settings, FALSE);
+	webkit_settings_set_enable_frame_flattening(settings, s->EnableFrameFlattening);
+	webkit_settings_set_enable_smooth_scrolling(settings, s->EnableSmoothScrolling);
 
-	g_signal_connect(webview, "load-changed", G_CALLBACK(load_changed_cb), NULL);
-	g_signal_connect(webview, "context-menu", G_CALLBACK(webview_context_menu_cb), NULL);
+	webkit_settings_set_enable_javascript(settings, s->EnableJavaScript);
+	webkit_settings_set_javascript_can_open_windows_automatically(settings, s->EnableJavaScriptCanOpenWindows);
+	webkit_settings_set_allow_modal_dialogs(settings, s->AllowModalDialogs);
+
+	webkit_settings_set_enable_write_console_messages_to_stdout(settings, s->EnableWriteConsoleMessagesToStdout);
+
+	if(user_agent != NULL) webkit_settings_set_user_agent(settings, user_agent);
+
+	if (s->Resizable) gtk_window_set_default_size(GTK_WINDOW(window), s->Width, s->Height);
+	gtk_window_set_resizable(GTK_WINDOW(window), s->Resizable);
+	gtk_widget_set_size_request(window,  s->Width, s->Height);
+	gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+
+	WebKitWebView *webview = (WebKitWebView *)webkit_web_view_new_with_settings(settings);
+
+	g_signal_connect(window, "delete-event", G_CALLBACK(window_close_cb), (void*)parent);
+	g_signal_connect(webview, "load-changed", G_CALLBACK(wv_load_changed_cb),  (void*)parent);
+	g_signal_connect(webview, "context-menu", G_CALLBACK(wv_context_menu_cb),  (void*)parent);
 
 
 	GtkWidget *scroller = gtk_scrolled_window_new(NULL, NULL);
 	gtk_container_add(GTK_CONTAINER(window), scroller);
 	gtk_container_add(GTK_CONTAINER(scroller), GTK_WIDGET(webview));
-
-	start_handler();
-	gtk_main();
-
-}
-
-static void setWebView(const char *title, const char *url, int width, int height, int resizable) {
-	gtk_window_set_title(GTK_WINDOW(window), title);
-
-	if (resizable) {
-		gtk_window_set_default_size(GTK_WINDOW(window), width, height);
-	}
-
-	gtk_widget_set_size_request(window, width, height);
-	gtk_window_set_resizable(GTK_WINDOW(window), !!resizable);
-	gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
-
-	webkit_web_view_load_uri(WEBKIT_WEB_VIEW(webview), url);
+	start_handler(parent);
 	gtk_widget_show_all(window);
+
+	return webview;
 }
 
+static void close_window(WebKitWebView *wv, GtkWidget *win) {
+	webkit_web_view_try_close(wv);
+	gtk_widget_destroy(win);
+}
+
+static void loadURI(WebKitWebView *wv, const char *uri) {
+	webkit_web_view_load_uri(wv, uri);
+}
+
+static void loadHTML(WebKitWebView *wv, const char *html) {
+	webkit_web_view_load_html(wv, html, "");
+}
 #endif /* WEBVIEW_H */
