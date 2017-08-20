@@ -13,31 +13,23 @@ import (
 	"log"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"unsafe"
-
-	"github.com/OneOfOne/cmap"
 )
 
 var (
+	AutoQuitGTK = true
+
 	Debug = true
 
 	ErrWindowIsClosed = errors.New("WebView is already closed.")
-
-	started  = make(chan struct{})
-	done     = make(chan struct{})
-	mainOnce sync.Once
-	quitOnce sync.Once
-
-	cbHandles = cmap.NewSize(8)
-	counter   uint64
 )
 
-type Settings struct {
+type WebKitSettings struct {
 	EnableJava            bool
 	EnablePlugins         bool
 	EnableFrameFlattening bool
 	EnableSmoothScrolling bool
+	EnableSpellChecking   bool
 
 	EnableJavaScript               bool
 	EnableJavaScriptCanOpenWindows bool
@@ -45,6 +37,18 @@ type Settings struct {
 
 	EnableWriteConsoleMessagesToStdout bool
 
+	EnableWebGL bool
+}
+
+type WebKitBoolProperty struct {
+	Name  string
+	Value bool
+}
+
+type Settings struct {
+	*WebKitSettings
+
+	Decorated bool
 	Resizable bool
 
 	Width  int
@@ -53,27 +57,59 @@ type Settings struct {
 	UserAgent string
 }
 
-var DefaultSettings = Settings{
-	EnableJava:            false,
-	EnablePlugins:         false,
-	EnableFrameFlattening: true,
-	EnableSmoothScrolling: true,
+var (
+	DefaultWebKitSettings = WebKitSettings{
+		EnableJava:            false,
+		EnablePlugins:         false,
+		EnableFrameFlattening: true,
+		EnableSmoothScrolling: true,
+		EnableSpellChecking:   true,
 
-	EnableJavaScript:               true,
-	EnableJavaScriptCanOpenWindows: true,
-	AllowModalDialogs:              true,
+		EnableJavaScript:               true,
+		EnableJavaScriptCanOpenWindows: true,
+		AllowModalDialogs:              true,
 
-	EnableWriteConsoleMessagesToStdout: true,
+		EnableWriteConsoleMessagesToStdout: true,
 
-	Resizable: true,
+		EnableWebGL: false,
+	}
 
-	Width:  800,
-	Height: 600,
+	DefaultSettings = Settings{
+		WebKitSettings: &DefaultWebKitSettings,
 
-	UserAgent: "webkit2gtk/" + runtime.Version(),
+		Decorated: true,
+		Resizable: true,
+
+		Width:  1024,
+		Height: 768,
+
+		UserAgent: "webkit2gtk/" + runtime.Version(),
+	}
+)
+
+func (s *Settings) c() *C.settings_t {
+	var v C.settings_t
+
+	if ws := s.WebKitSettings; ws != nil {
+		v.EnableJava = cbool(ws.EnableJava)
+		v.EnablePlugins = cbool(ws.EnablePlugins)
+		v.EnableFrameFlattening = cbool(ws.EnableFrameFlattening)
+		v.EnableSmoothScrolling = cbool(ws.EnableSmoothScrolling)
+		v.EnableJavaScript = cbool(ws.EnableJavaScript)
+		v.EnableJavaScriptCanOpenWindows = cbool(ws.EnableJavaScriptCanOpenWindows)
+		v.AllowModalDialogs = cbool(ws.AllowModalDialogs)
+		v.EnableWriteConsoleMessagesToStdout = cbool(ws.EnableWriteConsoleMessagesToStdout)
+		v.EnableWebGL = cbool(ws.EnableWebGL)
+	}
+	v.Decorated = cbool(s.Decorated)
+	v.Resizable = cbool(s.Resizable)
+	v.Width = C.int(s.Width)
+	v.Height = C.int(s.Height)
+
+	return &v
 }
 
-func StartGUI() {
+func startGUI() {
 	done := make(chan struct{})
 	go func() {
 		runtime.LockOSThread()
@@ -84,26 +120,8 @@ func StartGUI() {
 
 }
 
-func DestoryGUI() {
+func destoryGUI() {
 	C.gtk_main_quit()
-}
-
-func (s *Settings) c() *C.settings_t {
-	var v C.settings_t
-
-	v.EnableJava = cbool(s.EnableJava)
-	v.EnablePlugins = cbool(s.EnablePlugins)
-	v.EnableFrameFlattening = cbool(s.EnableFrameFlattening)
-	v.EnableSmoothScrolling = cbool(s.EnableSmoothScrolling)
-	v.EnableJavaScript = cbool(s.EnableJavaScript)
-	v.EnableJavaScriptCanOpenWindows = cbool(s.EnableJavaScriptCanOpenWindows)
-	v.AllowModalDialogs = cbool(s.AllowModalDialogs)
-	v.EnableWriteConsoleMessagesToStdout = cbool(s.EnableWriteConsoleMessagesToStdout)
-	v.Resizable = cbool(s.Resizable)
-	v.Width = C.int(s.Width)
-	v.Height = C.int(s.Height)
-
-	return &v
 }
 
 func cbool(v bool) C.gboolean {
@@ -114,8 +132,9 @@ func cbool(v bool) C.gboolean {
 }
 
 type WebView struct {
-	id      C.guint64
-	main    chan func()
+	id uint32
+	q  chan func()
+
 	done    chan struct{}
 	started chan struct{}
 
@@ -127,10 +146,13 @@ type WebView struct {
 
 func New(windowTitle string, s *Settings) *WebView {
 	wv := &WebView{
-		main:    make(chan func(), 10),
+		q:       make(chan func(), 1),
 		done:    make(chan struct{}),
 		started: make(chan struct{}),
 	}
+	runtime.SetFinalizer(wv, func(wv *WebView) { wv.Close() })
+
+	wv.id = addView(wv)
 
 	if s == nil {
 		s = &DefaultSettings
@@ -142,13 +164,11 @@ func New(windowTitle string, s *Settings) *WebView {
 	title := C.CString(windowTitle)
 	defer C.free(unsafe.Pointer(title))
 
-	wv.id = C.guint64(addToCache(wv))
-
 	wv.exec(func() {
 		wv.win = C.create_window()
-		wv.wv = C.init_window(wv.win, title, ua, s.c(), wv.id)
+		wv.wv = C.init_window(wv.win, title, ua, s.c(), C.guint64(wv.id))
 	})
-	runtime.SetFinalizer(wv, func(wv *WebView) { wv.Close() })
+
 	<-wv.started
 	return wv
 }
@@ -157,8 +177,7 @@ func (wv *WebView) LoadHTML(html string) {
 	wv.exec(func() {
 		html := C.CString(html)
 		defer C.free(unsafe.Pointer(html))
-		C.loadHTML(wv.wv, html)
-		log.Println("html")
+		C.load_html(wv.wv, html)
 	})
 }
 
@@ -166,8 +185,7 @@ func (wv *WebView) LoadURI(uri string) {
 	wv.exec(func() {
 		uri := C.CString(uri)
 		defer C.free(unsafe.Pointer(uri))
-		C.loadURI(wv.wv, uri)
-		log.Println("uri")
+		C.load_uri(wv.wv, uri)
 	})
 }
 
@@ -178,56 +196,84 @@ func (wv *WebView) Close() error {
 	default:
 	}
 	C.close_window(wv.wv, wv.win)
-	cbHandles.Delete(uint64(wv.id))
+	delView(wv.id)
 	close(wv.done)
 	return nil
 }
 
-func (wv *WebView) Done() chan struct{} { return wv.done }
+func (wv *WebView) Done() <-chan struct{} { return wv.done }
 
 func (wv *WebView) exec(fn func()) {
 	ch := make(chan struct{})
-	wv.main <- func() {
+	wv.q <- func() {
 		fn()
 		close(ch)
 	}
-	C.idle_add(wv.id)
+	C.idle_add(C.guint64(wv.id))
 	<-ch
 }
 
-// func LoadURI(uri string) {
-// 	gtk_exec(func() {
-// 		uri := C.CString(uri)
-// 		defer C.free(unsafe.Pointer(uri))
-// 		C.loadURI(uri)
-// 	})
-// }
-
-// func LoadHTML(html string) {
-// 	gtk_exec(func() {
-// 		html := C.CString(html)
-// 		defer C.free(unsafe.Pointer(html))
-// 		C.loadHTML(html)
-// 	})
-// }
-
-func gtk_exec(fn func()) {
-	// Init("forgot to call Init", nil)
-
-	id := atomic.AddUint64(&counter, 1)
-	ch := make(chan struct{})
-	cbHandles.Set(id, func() {
-		fn()
-		close(ch)
+func (wv *WebView) WithGtkContext(fn func(win *C.GtkWidget, wv *C.WebKitWebView)) {
+	wv.exec(func() {
+		fn(wv.win, wv.wv)
 	})
-	C.idle_add(C.guint64(id))
-	<-ch
 }
 
-func addToCache(wv *WebView) uint64 {
-	id := atomic.AddUint64(&counter, 1)
-	cbHandles.Set(id, wv)
+var views = struct {
+	sync.RWMutex
+	m          map[uint32]*WebView
+	calledMain bool
+	counter    uint32
+}{
+	m: map[uint32]*WebView{},
+}
+
+func CloseAll() {
+	views.Lock()
+	wvs := make([]*WebView, 0, len(views.m))
+	for _, wv := range views.m {
+		wvs = append(wvs, wv)
+	}
+	views.Unlock()
+	for _, wv := range wvs {
+		wv.Close()
+	}
+	if AutoQuitGTK {
+		return
+	}
+	views.Lock()
+	defer views.Unlock()
+	destoryGUI()
+	views.calledMain = false
+}
+
+func addView(wv *WebView) uint32 {
+	views.Lock()
+	defer views.Unlock()
+	if !views.calledMain {
+		startGUI()
+		views.calledMain = true
+	}
+	id := views.counter
+	views.counter++
+	views.m[id] = wv
 	return id
+}
+
+func delView(id uint32) {
+	views.Lock()
+	defer views.Unlock()
+	delete(views.m, id)
+	if len(views.m) == 0 && AutoQuitGTK {
+		destoryGUI()
+		views.calledMain = false
+	}
+}
+
+func getView(id uint32) *WebView {
+	views.RLock()
+	defer views.RUnlock()
+	return views.m[id]
 }
 
 //export in_gtk_main
@@ -235,15 +281,13 @@ func in_gtk_main(p C.guint64) {
 	if Debug {
 		log.Printf("in_gtk_main (%d)", p)
 	}
-	id := uint64(p)
-	if wv, ok := cbHandles.Get(id).(*WebView); ok {
-		for {
-			select {
-			case fn := <-wv.main:
-				fn()
-			default:
-				return
-			}
+
+	if wv := getView(uint32(p)); wv != nil {
+		select {
+		case fn := <-wv.q:
+			fn()
+		default:
+			return
 		}
 	}
 
@@ -254,7 +298,7 @@ func close_handler(p C.guint64) {
 	if Debug {
 		log.Printf("close_handler (%d)", p)
 	}
-	if wv, ok := cbHandles.Get(uint64(p)).(*WebView); ok {
+	if wv := getView(uint32(p)); wv != nil {
 		wv.Close()
 	}
 }
@@ -264,10 +308,9 @@ func start_handler(p C.guint64) {
 	if Debug {
 		log.Printf("start_handler (%d)", p)
 	}
-	if wv, ok := cbHandles.Get(uint64(p)).(*WebView); ok {
+	if wv := getView(uint32(p)); wv != nil {
 		close(wv.started)
 	}
-	// close(started)
 }
 
 //export wv_load_finished
@@ -275,9 +318,7 @@ func wv_load_finished(p C.guint64, url *C.char) {
 	if Debug {
 		log.Printf("wv_load_finished (%d): %s", p, C.GoString(url))
 	}
-	if wv, ok := cbHandles.Get(uint64(p)).(*WebView); ok {
-		if wv.OnPageLoad != nil {
-			wv.OnPageLoad(C.GoString(url))
-		}
+	if wv := getView(uint32(p)); wv != nil && wv.OnPageLoad != nil {
+		wv.OnPageLoad(C.GoString(url))
 	}
 }

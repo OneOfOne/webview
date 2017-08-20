@@ -45,8 +45,6 @@ func init() {
 }
 
 func TestUI(t *testing.T) {
-	StartGUI()
-	defer DestoryGUI()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
@@ -65,24 +63,17 @@ func TestUI(t *testing.T) {
 	}()
 
 	wv0 := New("Test UI 0", nil)
-	wv1 := New("Test UI 1", nil)
+
+	s := DefaultSettings
+	s.Decorated, s.Width, s.Height = false, 400, 400
+	wv1 := New("Test UI 1", &s)
 
 	wv0.LoadURI("http://google.com/ncr")
 
 	wv1.LoadHTML(LoadingDoc)
 
-	select {
-	case <-wv0.Done():
-	}
-	select {
-	case <-wv1.Done():
-	}
-	// select {
-	// case <-wv1.Done():
-	// }
-	// select {
-	// case <-wv1.Done():
-	// }
+	<-wv0.Done()
+	<-wv1.Done()
 }
 
 const LoadingDoc = `
@@ -90,16 +81,27 @@ const LoadingDoc = `
 
 <head>
 	<style>
+	body {
+		background:#282828;
+	}
 	div {
-		border: 16px solid #f3f3f3;
-		border-top: 16px solid #3498db;
+		border: 30px solid #f3f3f3;
+		border-top: 30px solid #3498db;
 		border-radius: 50%;
-		width: 120px;
-		height: 120px;
+		width: 200px;
+		height: 200px;
 		animation: spin 2s linear infinite;
-		margin: 0 auto;
 	}
 
+	.middle {
+		position: absolute;
+		top:0;
+		bottom: 0;
+		left: 0;
+		right: 0;
+
+		margin: auto;
+	}
 	@keyframes spin {
 		0% {
 			transform: rotate(0deg);
@@ -110,8 +112,8 @@ const LoadingDoc = `
 	}
 	</style>
 </head>
-<body>
-	<div></div>
+<body onclick="window.close()">
+	<div class="middle"></div>
 </body>
 </html>
 `

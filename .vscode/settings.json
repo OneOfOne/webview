@@ -1,0 +1,11 @@
+{
+	"files.associations": {
+		"*.h": "c"
+	},
+
+	"clang.cflags": [
+		"-I/usr/include/gtk-3.0/",
+		"-std=c11",
+		"-Wall"
+	]
+}

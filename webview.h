@@ -1,7 +1,7 @@
 #ifndef WEBVIEW_H
 #define WEBVIEW_H
 
-#include <gtk/gtk.h>
+#include <gtk-3.0/gtk/gtk.h>
 #include <webkit2/webkit2.h>
 
 extern void close_handler(guint64);
@@ -34,7 +34,6 @@ static gboolean wv_context_menu_cb(WebKitWebView *webview,
 static void idle_add(guint64 v) { g_idle_add((GSourceFunc)in_gtk_main, (gpointer)v); }
 static void timeout_add(guint64 v) { g_timeout_add(100, (GSourceFunc)in_gtk_main, (gpointer)v); }
 
-
 static void wv_load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gpointer parent) {
 	switch (load_event) {
 		case WEBKIT_LOAD_STARTED:
@@ -61,6 +60,9 @@ typedef struct {
 
 	gboolean EnableWriteConsoleMessagesToStdout;
 
+	gboolean EnableWebGL;
+
+	gboolean Decorated;
 	gboolean Resizable;
 
 	int Width;
@@ -76,6 +78,8 @@ static GtkWidget *create_window() {
 static WebKitWebView *init_window(GtkWidget *window, const char *title, const char *user_agent, settings_t *s, guint64 parent) {
 	gtk_widget_hide_on_delete(window);
 	gtk_window_set_title(GTK_WINDOW(window), title);
+	gtk_window_set_decorated(GTK_WINDOW(window), s->Decorated);
+
 
 	WebKitSettings *settings = webkit_settings_new();
 	webkit_settings_set_enable_java(settings, s->EnableJava);
@@ -88,6 +92,7 @@ static WebKitWebView *init_window(GtkWidget *window, const char *title, const ch
 	webkit_settings_set_allow_modal_dialogs(settings, s->AllowModalDialogs);
 
 	webkit_settings_set_enable_write_console_messages_to_stdout(settings, s->EnableWriteConsoleMessagesToStdout);
+	webkit_settings_set_enable_webgl (settings, s->EnableWebGL);
 
 	if(user_agent != NULL) webkit_settings_set_user_agent(settings, user_agent);
 
@@ -117,11 +122,15 @@ static void close_window(WebKitWebView *wv, GtkWidget *win) {
 	gtk_widget_destroy(win);
 }
 
-static void loadURI(WebKitWebView *wv, const char *uri) {
+static void load_uri(WebKitWebView *wv, const char *uri) {
 	webkit_web_view_load_uri(wv, uri);
 }
 
-static void loadHTML(WebKitWebView *wv, const char *html) {
+static void load_html(WebKitWebView *wv, const char *html) {
 	webkit_web_view_load_html(wv, html, "");
+}
+
+static void set_prop(WebKitSettings *s, const char * prop, gboolean v) {
+	g_object_set (G_OBJECT(s), prop, v, NULL);
 }
 #endif /* WEBVIEW_H */
