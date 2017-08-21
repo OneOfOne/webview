@@ -63,14 +63,13 @@ func TestUI(t *testing.T) {
 	}()
 
 	wv0 := New("Hello webkit2gtk", nil)
-
-	s := DefaultSettings
-	s.Decorated, s.Width, s.Height = false, 400, 400
-	wv1 := New("Spinner", &s)
-
 	wv0.LoadURI("http://" + ln.Addr().String())
 
+	s := DefaultSettings
+	s.Decorated, s.Fullscreen = false, true
+	wv1 := New("Spinner", &s)
 	wv1.LoadHTML(LoadingDoc)
+
 	wv1.OnPageLoad = func(uri string) {
 		wv1.RunJavaScript(`document.body.id`, func(v JSValue, err error) {
 			if err != nil {
@@ -79,6 +78,7 @@ func TestUI(t *testing.T) {
 			}
 			log.Printf("js value (type=%s): %s", v.Type(), v.AsString())
 		})
+		wv1.RunJavaScript("document.body.requestFullscreen();", nil)
 
 	}
 	<-wv0.Done()

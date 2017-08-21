@@ -30,6 +30,7 @@ type WebKitSettings struct {
 	EnableFrameFlattening bool
 	EnableSmoothScrolling bool
 	EnableSpellChecking   bool
+	EnableFullscreen      bool
 
 	EnableJavaScript               bool
 	EnableJavaScriptCanOpenWindows bool
@@ -48,15 +49,16 @@ type WebKitBoolProperty struct {
 type Settings struct {
 	Offscreen bool
 
-	Decorated bool
-	Resizable bool
+	Decorated  bool
+	Resizable  bool
+	Fullscreen bool
 
 	Width  int
 	Height int
 
 	UserAgent string
 
-	WebKit *WebKitSettings
+	WebKit WebKitSettings
 }
 
 var (
@@ -66,6 +68,7 @@ var (
 		EnableFrameFlattening: true,
 		EnableSmoothScrolling: true,
 		EnableSpellChecking:   true,
+		EnableFullscreen:      true,
 
 		EnableJavaScript:               true,
 		EnableJavaScriptCanOpenWindows: true,
@@ -77,7 +80,7 @@ var (
 	}
 
 	DefaultSettings = Settings{
-		WebKit: &DefaultWebKitSettings,
+		WebKit: DefaultWebKitSettings,
 
 		Decorated: true,
 		Resizable: true,
@@ -92,21 +95,32 @@ var (
 func (s *Settings) c() *C.settings_t {
 	var v C.settings_t
 
-	if ws := s.WebKit; ws != nil {
-		v.EnableJava = cbool(ws.EnableJava)
-		v.EnablePlugins = cbool(ws.EnablePlugins)
-		v.EnableFrameFlattening = cbool(ws.EnableFrameFlattening)
-		v.EnableSmoothScrolling = cbool(ws.EnableSmoothScrolling)
-		v.EnableJavaScript = cbool(ws.EnableJavaScript)
-		v.EnableJavaScriptCanOpenWindows = cbool(ws.EnableJavaScriptCanOpenWindows)
-		v.AllowModalDialogs = cbool(ws.AllowModalDialogs)
-		v.EnableWriteConsoleMessagesToStdout = cbool(ws.EnableWriteConsoleMessagesToStdout)
-		v.EnableWebGL = cbool(ws.EnableWebGL)
-	}
+	ws := s.WebKit
+	v.EnableJava = cbool(ws.EnableJava)
+	v.EnablePlugins = cbool(ws.EnablePlugins)
+
+	v.EnableFrameFlattening = cbool(ws.EnableFrameFlattening)
+	v.EnableSmoothScrolling = cbool(ws.EnableSmoothScrolling)
+	v.EnableSpellChecking = cbool(ws.EnableSpellChecking)
+
+	v.EnableFullscreen = cbool(ws.EnableFullscreen)
+
+	v.EnableJavaScript = cbool(ws.EnableJavaScript)
+	v.EnableJavaScriptCanOpenWindows = cbool(ws.EnableJavaScriptCanOpenWindows)
+	v.AllowModalDialogs = cbool(ws.AllowModalDialogs)
+
+	v.EnableWriteConsoleMessagesToStdout = cbool(ws.EnableWriteConsoleMessagesToStdout)
+	v.EnableWebGL = cbool(ws.EnableWebGL)
+
 	v.Decorated = cbool(s.Decorated)
 	v.Resizable = cbool(s.Resizable)
-	v.Width = C.int(s.Width)
-	v.Height = C.int(s.Height)
+
+	if s.Fullscreen {
+		v.Width, v.Height = -1, -1
+	} else {
+		v.Width = C.int(s.Width)
+		v.Height = C.int(s.Height)
+	}
 
 	return &v
 }

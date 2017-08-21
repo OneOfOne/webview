@@ -54,6 +54,8 @@ typedef struct {
 	gboolean EnablePlugins;
 	gboolean EnableFrameFlattening;
 	gboolean EnableSmoothScrolling;
+	gboolean EnableSpellChecking;
+	gboolean EnableFullscreen;
 
 	gboolean EnableJavaScript;
 	gboolean EnableJavaScriptCanOpenWindows;
@@ -88,6 +90,8 @@ static WebKitWebView *init_window(GtkWidget *window, const char *title, const ch
 	webkit_settings_set_enable_plugins(settings, FALSE);
 	webkit_settings_set_enable_frame_flattening(settings, s->EnableFrameFlattening);
 	webkit_settings_set_enable_smooth_scrolling(settings, s->EnableSmoothScrolling);
+	webkit_settings_set_enable_fullscreen(settings, s->EnableFullscreen);
+
 
 	webkit_settings_set_enable_javascript(settings, s->EnableJavaScript);
 	webkit_settings_set_javascript_can_open_windows_automatically(settings, s->EnableJavaScriptCanOpenWindows);
@@ -98,25 +102,32 @@ static WebKitWebView *init_window(GtkWidget *window, const char *title, const ch
 
 	if(user_agent != NULL) webkit_settings_set_user_agent(settings, user_agent);
 
-	if (s->Resizable) gtk_window_set_default_size(GTK_WINDOW(window), s->Width, s->Height);
-	gtk_window_set_resizable(GTK_WINDOW(window), s->Resizable);
-	gtk_widget_set_size_request(window,  s->Width, s->Height);
+	if(s->Width == -1 && s->Height == -1) {
+		gtk_window_fullscreen(GTK_WINDOW(window));
+	} else {
+		if (s->Resizable) gtk_window_set_default_size(GTK_WINDOW(window), s->Width, s->Height);
+		gtk_window_set_resizable(GTK_WINDOW(window), s->Resizable);
+		gtk_widget_set_size_request(window,  s->Width, s->Height);
+	}
 	gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
 
-	WebKitWebView *webview = (WebKitWebView *)webkit_web_view_new_with_settings(settings);
+	WebKitWebView *wv = (WebKitWebView *)webkit_web_view_new_with_settings(settings);
+
+	if(s->EnableSpellChecking) {
+		webkit_web_context_set_spell_checking_enabled(webkit_web_view_get_context(wv), s->EnableSpellChecking);
+	}
 
 	g_signal_connect(window, "delete-event", G_CALLBACK(window_close_cb), (void*)parent);
-	g_signal_connect(webview, "load-changed", G_CALLBACK(wv_load_changed_cb),  (void*)parent);
-	g_signal_connect(webview, "context-menu", G_CALLBACK(wv_context_menu_cb),  (void*)parent);
-
+	g_signal_connect(wv, "load-changed", G_CALLBACK(wv_load_changed_cb),  (void*)parent);
+	g_signal_connect(wv, "context-menu", G_CALLBACK(wv_context_menu_cb),  (void*)parent);
 
 	GtkWidget *scroller = gtk_scrolled_window_new(NULL, NULL);
 	gtk_container_add(GTK_CONTAINER(window), scroller);
-	gtk_container_add(GTK_CONTAINER(scroller), GTK_WIDGET(webview));
+	gtk_container_add(GTK_CONTAINER(scroller), GTK_WIDGET(wv));
 	startHandler(parent);
 	gtk_widget_show_all(window);
 
-	return webview;
+	return wv;
 }
 
 static void javascript_finished (GObject *object, GAsyncResult *result, gpointer data){
