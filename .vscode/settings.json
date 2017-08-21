@@ -5,6 +5,7 @@
 
 	"clang.cflags": [
 		"-I/usr/include/gtk-3.0/",
+		"-I/usr/include/webkitgtk-4.0/",
 		"-std=c11",
 		"-Wall"
 	]

@@ -3,17 +3,18 @@
 
 #include <gtk-3.0/gtk/gtk.h>
 #include <webkit2/webkit2.h>
+#include <JavaScriptCore/JavaScript.h>
 
-extern void close_handler(guint64);
-extern void start_handler(guint64);
-extern void wv_load_finished(guint64, char *);
-extern void wv_load_status_changed();
-extern void in_gtk_main(guint64);
+extern void closeHandler(guint64);
+extern void startHandler(guint64);
+extern void wvLoadFinished(guint64, char *);
+extern void inGtkMain(guint64);
+extern void jsCallback(guint64, JSGlobalContextRef, JSValueRef, char *);
 
 static gboolean window_close_cb(GtkWidget *widget, GdkEvent *event, gpointer parent) {
 	(void)widget; (void)event;
 
-	close_handler((guint64)parent);
+	closeHandler((guint64)parent);
 	return TRUE;
 }
 
@@ -31,8 +32,8 @@ static gboolean wv_context_menu_cb(WebKitWebView *webview,
 	return TRUE;
 }
 
-static void idle_add(guint64 v) { g_idle_add((GSourceFunc)in_gtk_main, (gpointer)v); }
-static void timeout_add(guint64 v) { g_timeout_add(100, (GSourceFunc)in_gtk_main, (gpointer)v); }
+static void idle_add(guint64 v) { g_idle_add((GSourceFunc)inGtkMain, (gpointer)v); }
+static void timeout_add(guint64 v) { g_timeout_add(100, (GSourceFunc)inGtkMain, (gpointer)v); }
 
 static void wv_load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gpointer parent) {
 	switch (load_event) {
@@ -43,7 +44,7 @@ static void wv_load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gp
 		case WEBKIT_LOAD_COMMITTED:
 			break;
 		case WEBKIT_LOAD_FINISHED:
-			wv_load_finished((guint64) parent, (char *)webkit_web_view_get_uri(wv));
+			wvLoadFinished((guint64) parent, (char *)webkit_web_view_get_uri(wv));
 			break;
 		}
 }
@@ -70,8 +71,9 @@ typedef struct {
 
 } settings_t;
 
-static GtkWidget *create_window() {
+static GtkWidget *create_window(gboolean offscreen) {
 	if (gtk_init_check(0, NULL) == FALSE) return NULL;
+	if(offscreen) return gtk_offscreen_window_new();
 	return gtk_window_new(GTK_WINDOW_TOPLEVEL);
 }
 
@@ -111,10 +113,44 @@ static WebKitWebView *init_window(GtkWidget *window, const char *title, const ch
 	GtkWidget *scroller = gtk_scrolled_window_new(NULL, NULL);
 	gtk_container_add(GTK_CONTAINER(window), scroller);
 	gtk_container_add(GTK_CONTAINER(scroller), GTK_WIDGET(webview));
-	start_handler(parent);
+	startHandler(parent);
 	gtk_widget_show_all(window);
 
 	return webview;
+}
+
+static void javascript_finished (GObject *object, GAsyncResult *result, gpointer data){
+	GError *error = NULL;
+	WebKitJavascriptResult *js_result = webkit_web_view_run_javascript_finish (WEBKIT_WEB_VIEW (object), result, &error);
+	if (!js_result) {
+		jsCallback((guint64)data, NULL, NULL, error->message);
+		g_error_free (error);
+		return;
+	}
+
+	JSGlobalContextRef context = webkit_javascript_result_get_global_context (js_result);
+	JSValueRef value = webkit_javascript_result_get_value (js_result);
+	jsCallback((guint64)data, context, value, NULL);
+	webkit_javascript_result_unref (js_result);
+}
+
+static void execute_javascript(WebKitWebView *wv, guint64 cbID, const char *js) {
+	webkit_web_view_run_javascript (wv, js, NULL, javascript_finished, (gpointer) cbID);
+}
+
+static const char * js_get_str(JSGlobalContextRef ctx, JSValueRef ref) {
+	JSStringRef js_str_value;
+	gchar      *str_value;
+	gsize       str_length;
+
+	js_str_value = JSValueToStringCopy (ctx, ref, NULL);
+	str_length = JSStringGetMaximumUTF8CStringSize (js_str_value);
+	str_value = (gchar *)g_malloc (str_length);
+	JSStringGetUTF8CString (js_str_value, str_value, str_length);
+	JSStringRelease (js_str_value);
+	// g_print ("Script result: %s\n", str_value);
+	// g_free (str_value);
+	return str_value;
 }
 
 static void close_window(WebKitWebView *wv, GtkWidget *win) {

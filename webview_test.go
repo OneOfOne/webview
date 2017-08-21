@@ -1,4 +1,4 @@
-package gtkwebview
+package webview
 
 import (
 	"html/template"
@@ -62,16 +62,25 @@ func TestUI(t *testing.T) {
 		log.Fatal(http.Serve(ln, nil))
 	}()
 
-	wv0 := New("Test UI 0", nil)
+	wv0 := New("Hello webkit2gtk", nil)
 
 	s := DefaultSettings
 	s.Decorated, s.Width, s.Height = false, 400, 400
-	wv1 := New("Test UI 1", &s)
+	wv1 := New("Spinner", &s)
 
-	wv0.LoadURI("http://google.com/ncr")
+	wv0.LoadURI("http://" + ln.Addr().String())
 
 	wv1.LoadHTML(LoadingDoc)
+	wv1.OnPageLoad = func(uri string) {
+		wv1.RunJavaScript(`document.body.id`, func(v JSValue, err error) {
+			if err != nil {
+				t.Errorf("js error: %v", err)
+				return
+			}
+			log.Printf("js value (type=%s): %s", v.Type(), v.AsString())
+		})
 
+	}
 	<-wv0.Done()
 	<-wv1.Done()
 }
@@ -82,7 +91,7 @@ const LoadingDoc = `
 <head>
 	<style>
 	body {
-		background:#282828;
+		background: #ccc;
 	}
 	div {
 		border: 30px solid #f3f3f3;
@@ -112,7 +121,7 @@ const LoadingDoc = `
 	}
 	</style>
 </head>
-<body onclick="window.close()">
+<body id="this-is-the-body">
 	<div class="middle"></div>
 </body>
 </html>

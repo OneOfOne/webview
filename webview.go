@@ -1,11 +1,11 @@
-package gtkwebview
+package webview
 
 /*
 #cgo linux CFLAGS: -DWEBVIEW_GTK=1 -Wall -O2 -Wno-unused-function -Wno-unused-variable -Werror
 #cgo linux pkg-config: gtk+-3.0 webkit2gtk-4.0
 
 #include <stdlib.h>
-#include "webview.h"
+#include "helpers.h"
 */
 import "C"
 import (
@@ -19,7 +19,7 @@ import (
 var (
 	AutoQuitGTK = true
 
-	Debug = true
+	Debug = false
 
 	ErrWindowIsClosed = errors.New("WebView is already closed.")
 )
@@ -46,7 +46,7 @@ type WebKitBoolProperty struct {
 }
 
 type Settings struct {
-	*WebKitSettings
+	Offscreen bool
 
 	Decorated bool
 	Resizable bool
@@ -55,6 +55,8 @@ type Settings struct {
 	Height int
 
 	UserAgent string
+
+	WebKit *WebKitSettings
 }
 
 var (
@@ -75,7 +77,7 @@ var (
 	}
 
 	DefaultSettings = Settings{
-		WebKitSettings: &DefaultWebKitSettings,
+		WebKit: &DefaultWebKitSettings,
 
 		Decorated: true,
 		Resizable: true,
@@ -90,7 +92,7 @@ var (
 func (s *Settings) c() *C.settings_t {
 	var v C.settings_t
 
-	if ws := s.WebKitSettings; ws != nil {
+	if ws := s.WebKit; ws != nil {
 		v.EnableJava = cbool(ws.EnableJava)
 		v.EnablePlugins = cbool(ws.EnablePlugins)
 		v.EnableFrameFlattening = cbool(ws.EnableFrameFlattening)
@@ -165,7 +167,7 @@ func New(windowTitle string, s *Settings) *WebView {
 	defer C.free(unsafe.Pointer(title))
 
 	wv.exec(func() {
-		wv.win = C.create_window()
+		wv.win = C.create_window(cbool(s.Offscreen))
 		wv.wv = C.init_window(wv.win, title, ua, s.c(), C.guint64(wv.id))
 	})
 
@@ -276,10 +278,10 @@ func getView(id uint32) *WebView {
 	return views.m[id]
 }
 
-//export in_gtk_main
-func in_gtk_main(p C.guint64) {
+//export inGtkMain
+func inGtkMain(p C.guint64) {
 	if Debug {
-		log.Printf("in_gtk_main (%d)", p)
+		log.Printf("inGtkMain (%d)", p)
 	}
 
 	if wv := getView(uint32(p)); wv != nil {
@@ -293,30 +295,30 @@ func in_gtk_main(p C.guint64) {
 
 }
 
-//export close_handler
-func close_handler(p C.guint64) {
+//export closeHandler
+func closeHandler(p C.guint64) {
 	if Debug {
-		log.Printf("close_handler (%d)", p)
+		log.Printf("closeHandler (%d)", p)
 	}
 	if wv := getView(uint32(p)); wv != nil {
 		wv.Close()
 	}
 }
 
-//export start_handler
-func start_handler(p C.guint64) {
+//export startHandler
+func startHandler(p C.guint64) {
 	if Debug {
-		log.Printf("start_handler (%d)", p)
+		log.Printf("startHandler (%d)", p)
 	}
 	if wv := getView(uint32(p)); wv != nil {
 		close(wv.started)
 	}
 }
 
-//export wv_load_finished
-func wv_load_finished(p C.guint64, url *C.char) {
+//export wvLoadFinished
+func wvLoadFinished(p C.guint64, url *C.char) {
 	if Debug {
-		log.Printf("wv_load_finished (%d): %s", p, C.GoString(url))
+		log.Printf("wvLoadFinished (%d): %s", p, C.GoString(url))
 	}
 	if wv := getView(uint32(p)); wv != nil && wv.OnPageLoad != nil {
 		wv.OnPageLoad(C.GoString(url))
