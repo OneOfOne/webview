@@ -7,8 +7,9 @@ package webview
 import "C"
 import (
 	"errors"
-	"sync"
 	"unsafe"
+
+	"github.com/OneOfOne/webview/internal/cache"
 )
 
 type JSType uint8
@@ -41,13 +42,9 @@ func (t JSType) String() string {
 	}
 }
 
-var (
-	jsCallbacks struct {
-		sync.Mutex
-		counter uint64
-		m       map[uint64]func(v JSValue, err error)
-	}
-)
+type JavascriptCallback func(JSValue, error)
+
+var jsCB = cache.NewLMap()
 
 type JSValue struct {
 	ctx C.JSGlobalContextRef
@@ -68,10 +65,7 @@ func (v JSValue) AsString() string {
 //export jsCallback
 func jsCallback(cbID C.guint64, ctx C.JSGlobalContextRef, v C.JSValueRef, errMsg *C.char) {
 	id := uint64(cbID)
-	jsCallbacks.Lock()
-	fn := jsCallbacks.m[id]
-	delete(jsCallbacks.m, id)
-	jsCallbacks.Unlock()
+	fn, _ := jsCB.DeleteAndGet(id).(JavascriptCallback)
 
 	if fn == nil {
 		return
@@ -84,14 +78,8 @@ func jsCallback(cbID C.guint64, ctx C.JSGlobalContextRef, v C.JSValueRef, errMsg
 }
 
 func (wv *WebView) RunJavaScript(script string, fn func(JSValue, error)) {
-	jsCallbacks.Lock()
-	if jsCallbacks.m == nil {
-		jsCallbacks.m = make(map[uint64]func(JSValue, error))
-	}
-	id := jsCallbacks.counter
-	jsCallbacks.m[id] = fn
-	jsCallbacks.counter++
-	jsCallbacks.Unlock()
+	id := nextID()
+	jsCB.Set(id, JavascriptCallback(fn))
 	p := C.CString(script)
 	defer C.free(unsafe.Pointer(p))
 	C.execute_javascript(wv.wv, C.guint64(id), p)

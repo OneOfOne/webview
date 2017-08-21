@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"sync"
 	"unsafe"
+
+	"github.com/OneOfOne/webview/internal/cache"
 )
 
 var (
@@ -125,21 +127,6 @@ func (s *Settings) c() *C.settings_t {
 	return &v
 }
 
-func startGUI() {
-	done := make(chan struct{})
-	go func() {
-		runtime.LockOSThread()
-		close(done)
-		C.gtk_main()
-	}()
-	<-done
-
-}
-
-func destoryGUI() {
-	C.gtk_main_quit()
-}
-
 func cbool(v bool) C.gboolean {
 	if v {
 		return C.gboolean(1)
@@ -148,7 +135,7 @@ func cbool(v bool) C.gboolean {
 }
 
 type WebView struct {
-	id uint32
+	id uint64
 	q  chan func()
 
 	done    chan struct{}
@@ -157,7 +144,8 @@ type WebView struct {
 	win *C.GtkWidget
 	wv  *C.WebKitWebView
 
-	OnPageLoad func(uri string)
+	loadMux sync.Mutex
+	loadCh  chan string
 }
 
 func New(windowTitle string, s *Settings) *WebView {
@@ -165,6 +153,7 @@ func New(windowTitle string, s *Settings) *WebView {
 		q:       make(chan func(), 1),
 		done:    make(chan struct{}),
 		started: make(chan struct{}),
+		loadCh:  make(chan string),
 	}
 	runtime.SetFinalizer(wv, func(wv *WebView) { wv.Close() })
 
@@ -189,20 +178,29 @@ func New(windowTitle string, s *Settings) *WebView {
 	return wv
 }
 
-func (wv *WebView) LoadHTML(html string) {
+func (wv *WebView) LoadHTML(html string) string {
+	wv.loadMux.Lock()
+	defer wv.loadMux.Unlock()
+
 	wv.exec(func() {
 		html := C.CString(html)
 		defer C.free(unsafe.Pointer(html))
 		C.load_html(wv.wv, html)
 	})
+
+	return <-wv.loadCh
 }
 
-func (wv *WebView) LoadURI(uri string) {
+func (wv *WebView) LoadURI(uri string) string {
+	wv.loadMux.Lock()
+	defer wv.loadMux.Unlock()
 	wv.exec(func() {
 		uri := C.CString(uri)
 		defer C.free(unsafe.Pointer(uri))
 		C.load_uri(wv.wv, uri)
 	})
+
+	return <-wv.loadCh
 }
 
 func (wv *WebView) Close() error {
@@ -214,6 +212,9 @@ func (wv *WebView) Close() error {
 	C.close_window(wv.wv, wv.win)
 	delView(wv.id)
 	close(wv.done)
+	wv.loadMux.Lock()
+	close(wv.loadCh)
+	wv.loadMux.Unlock()
 	return nil
 }
 
@@ -235,61 +236,72 @@ func (wv *WebView) WithGtkContext(fn func(win *C.GtkWidget, wv *C.WebKitWebView)
 	})
 }
 
-var views = struct {
-	sync.RWMutex
-	m          map[uint32]*WebView
+var (
+	views      = cache.NewLMap()
+	mainMux    sync.Mutex
 	calledMain bool
-	counter    uint32
-}{
-	m: map[uint32]*WebView{},
-}
+)
 
 func CloseAll() {
-	views.Lock()
-	wvs := make([]*WebView, 0, len(views.m))
-	for _, wv := range views.m {
-		wvs = append(wvs, wv)
-	}
-	views.Unlock()
-	for _, wv := range wvs {
-		wv.Close()
-	}
+	views.ForEach(nil, func(key uint64, val interface{}) bool {
+		if wv, _ := val.(*WebView); wv != nil {
+			wv.Close()
+		}
+		return true
+	})
 	if AutoQuitGTK {
 		return
 	}
-	views.Lock()
-	defer views.Unlock()
+	mainMux.Lock()
 	destoryGUI()
-	views.calledMain = false
+	calledMain = false
+	mainMux.Unlock()
 }
 
-func addView(wv *WebView) uint32 {
-	views.Lock()
-	defer views.Unlock()
-	if !views.calledMain {
+func startGUI() {
+	done := make(chan struct{})
+	go func() {
+		runtime.LockOSThread()
+		close(done)
+		C.gtk_main()
+	}()
+	<-done
+
+}
+
+func destoryGUI() {
+	C.gtk_main_quit()
+}
+
+func checkStartGUI() {
+	mainMux.Lock()
+	if !calledMain {
 		startGUI()
-		views.calledMain = true
+		calledMain = true
 	}
-	id := views.counter
-	views.counter++
-	views.m[id] = wv
+	mainMux.Unlock()
+}
+func addView(wv *WebView) uint64 {
+	checkStartGUI()
+	id := nextID()
+	views.Set(id, wv)
 	return id
 }
 
-func delView(id uint32) {
-	views.Lock()
-	defer views.Unlock()
-	delete(views.m, id)
-	if len(views.m) == 0 && AutoQuitGTK {
-		destoryGUI()
-		views.calledMain = false
+func delView(id uint64) {
+	views.Delete(id)
+	if views.Len() > 0 || !AutoQuitGTK {
+		return
 	}
+	mainMux.Lock()
+	destoryGUI()
+	calledMain = false
+	mainMux.Unlock()
 }
 
-func getView(id uint32) *WebView {
-	views.RLock()
-	defer views.RUnlock()
-	return views.m[id]
+func getView(id uint64) *WebView {
+	wv, _ := views.Get(id).(*WebView)
+	return wv
 }
 
 //export inGtkMain
@@ -298,7 +310,7 @@ func inGtkMain(p C.guint64) {
 		log.Printf("inGtkMain (%d)", p)
 	}
 
-	if wv := getView(uint32(p)); wv != nil {
+	if wv := getView(uint64(p)); wv != nil {
 		select {
 		case fn := <-wv.q:
 			fn()
@@ -314,7 +326,7 @@ func closeHandler(p C.guint64) {
 	if Debug {
 		log.Printf("closeHandler (%d)", p)
 	}
-	if wv := getView(uint32(p)); wv != nil {
+	if wv := getView(uint64(p)); wv != nil {
 		wv.Close()
 	}
 }
@@ -324,7 +336,7 @@ func startHandler(p C.guint64) {
 	if Debug {
 		log.Printf("startHandler (%d)", p)
 	}
-	if wv := getView(uint32(p)); wv != nil {
+	if wv := getView(uint64(p)); wv != nil {
 		close(wv.started)
 	}
 }
@@ -334,7 +346,7 @@ func wvLoadFinished(p C.guint64, url *C.char) {
 	if Debug {
 		log.Printf("wvLoadFinished (%d): %s", p, C.GoString(url))
 	}
-	if wv := getView(uint32(p)); wv != nil && wv.OnPageLoad != nil {
-		wv.OnPageLoad(C.GoString(url))
+	if wv := getView(uint64(p)); wv != nil {
+		wv.loadCh <- C.GoString(url)
 	}
 }
