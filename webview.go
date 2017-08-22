@@ -1,7 +1,7 @@
 package webview
 
 /*
-#cgo linux CFLAGS: -DWEBVIEW_GTK=1 -Wall -O2 -Wno-unused-function -Wno-unused-variable -Werror
+#cgo CFLAGS: -Wall -O2 -Wno-unused-function -Wno-unused-variable -Werror -std=c11
 #cgo linux pkg-config: gtk+-3.0 webkit2gtk-4.0
 
 #include <stdlib.h>
@@ -140,12 +140,15 @@ type WebView struct {
 
 	done    chan struct{}
 	started chan struct{}
+	msgs    chan *JSValue
 
 	win *C.GtkWidget
 	wv  *C.WebKitWebView
 
 	loadMux sync.Mutex
 	loadCh  chan string
+
+	OnMessage func(j *JSValue, cb func(ret interface{}) *JSValue)
 }
 
 func New(windowTitle string, s *Settings) *WebView {
@@ -153,6 +156,7 @@ func New(windowTitle string, s *Settings) *WebView {
 		q:       make(chan func(), 1),
 		done:    make(chan struct{}),
 		started: make(chan struct{}),
+		msgs:    make(chan *JSValue, 10),
 		loadCh:  make(chan string),
 	}
 	runtime.SetFinalizer(wv, func(wv *WebView) { wv.Close() })
@@ -175,6 +179,7 @@ func New(windowTitle string, s *Settings) *WebView {
 	})
 
 	<-wv.started
+	go wv.watchMessages()
 	return wv
 }
 
@@ -212,6 +217,7 @@ func (wv *WebView) Close() error {
 	C.close_window(wv.wv, wv.win)
 	delView(wv.id)
 	close(wv.done)
+	close(wv.msgs)
 	wv.loadMux.Lock()
 	close(wv.loadCh)
 	wv.loadMux.Unlock()

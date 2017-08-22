@@ -62,24 +62,34 @@ func TestUI(t *testing.T) {
 		log.Fatal(http.Serve(ln, nil))
 	}()
 
-	wv0 := New("Hello webkit2gtk", nil)
-	t.Logf("loaded: %s", wv0.LoadURI("http://"+ln.Addr().String()))
+	// wv0 := New("Hello webkit2gtk", nil)
+	// t.Logf("loaded: %s", wv0.LoadURI("http://"+ln.Addr().String()))
 
 	s := DefaultSettings
-	s.Decorated, s.Fullscreen = false, true
+	//s.Decorated, s.Fullscreen = false, true
 	wv1 := New("Spinner", &s)
 
 	wv1.LoadHTML(LoadingDoc)
 
-	wv1.RunJavaScript(`document.body.id`, func(v JSValue, err error) {
-		if err != nil {
-			t.Errorf("js error: %v", err)
+	v := wv1.RunJS(`const o = {v: [1,2,3], u: "s"}; o`)
+	if err := v.Err(); err != nil {
+		t.Errorf("js error: %v", err)
+		// return
+	}
+	var data interface{}
+	log.Println(v.AsObject(&data))
+	t.Logf("js value (type=%s): %+v %s", v.Type(), data, v.AsJSON())
+
+	wv1.OnMessage = func(js *JSValue, cb func(reply interface{}) *JSValue) {
+		log.Printf("message from js: %s", js.val)
+		if cb == nil {
 			return
 		}
-		t.Logf("js value (type=%s): %s", v.Type(), v.AsString())
-	})
-	wv1.RunJavaScript("document.body.requestFullscreen();", nil)
-	<-wv0.Done()
+		v := cb("hello from go")
+		log.Printf("omg reply from javascript! %s", v.val)
+	}
+	wv1.RunJS(`postSystemMessage("hello from js", function(v) { console.log('js got:', v); return {reply_back_from_js: "woooo"}; });`)
+	// <-wv0.Done()
 	<-wv1.Done()
 }
 

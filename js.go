@@ -6,15 +6,74 @@ package webview
 */
 import "C"
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
 	"unsafe"
-
-	"github.com/OneOfOne/webview/internal/cache"
 )
 
-type JSType uint8
+// this is implemented just so PostMessages wouldn't block the UI thread.
+func (wv *WebView) watchMessages() {
+	type sysMsgIn struct {
+		CallbackID uint64          `json:"cbID"`
+		Value      json.RawMessage `json:"val"`
+	}
+	type sysMsgOut struct {
+		CallbackID uint64      `json:"cbID"`
+		Value      interface{} `json:"val"`
+	}
+	for m := range wv.msgs {
+		if wv.OnMessage == nil {
+			continue
+		}
+		var (
+			in sysMsgIn
+			cb func(interface{}) *JSValue
+		)
+
+		if err := m.AsObject(&in); err != nil {
+			m.typ, m.val = JSError, err.Error()
+			goto SEND
+		}
+
+		if in.CallbackID != 0 {
+			cb = func(v interface{}) *JSValue {
+				var out sysMsgOut
+				out.CallbackID, out.Value = in.CallbackID, v
+				b, err := json.Marshal(out)
+
+				if err != nil {
+					b = []byte(fmt.Sprintf("{cbID:%d,err:%q}", in.CallbackID, err.Error()))
+				}
+
+				return wv.RunJS("window._replyToSystemMessage(" + string(b) + ");")
+			}
+			m.val = in.Value
+		}
+	SEND:
+		wv.OnMessage(m, cb)
+	}
+}
+
+func (wv *WebView) RunJSAsync(script string) <-chan *JSValue {
+	p := C.CString(script)
+	defer C.free(unsafe.Pointer(p))
+	id := nextID()
+	ch := make(chan *JSValue, 1)
+	jsCB.Set(id, func(v *JSValue) {
+		ch <- v
+	})
+	C.execute_javascript(wv.wv, C.guint64(id), p)
+	return ch
+}
+
+func (wv *WebView) RunJS(script string) *JSValue {
+	return <-wv.RunJSAsync(script)
+}
+
+type JSType int8
 
 const (
+	JSError     = JSType(-1)
 	JSUndefined = JSType(C.kJSTypeUndefined)
 	JSNull      = JSType(C.kJSTypeNull)
 	JSBoolean   = JSType(C.kJSTypeBoolean)
@@ -37,86 +96,31 @@ func (t JSType) String() string {
 		return "string"
 	case JSObject:
 		return "object"
+	case JSError:
+		return "<error>"
 	default:
 		return "<invalid>"
 	}
 }
 
-type JavascriptCallback func(JSValue, error)
-
-var jsCB = cache.NewLMap()
-
-type JSValue struct {
-	ctx C.JSGlobalContextRef
-	val C.JSValueRef
-}
-
-func (v JSValue) Type() JSType {
-	return JSType(C.JSValueGetType(v.ctx, v.val))
-}
-
-func (v JSValue) AsString() string {
-	p := C.js_get_str(v.ctx, v.val)
-	s := C.GoString(p)
-	C.g_free(C.gpointer(p))
-	return s
-}
-
 //export jsCallback
-func jsCallback(cbID C.guint64, ctx C.JSGlobalContextRef, v C.JSValueRef, errMsg *C.char) {
+func jsCallback(cbID C.guint64, typ C.gint8, str *C.char, num C.double) {
 	id := uint64(cbID)
-	fn, _ := jsCB.DeleteAndGet(id).(JavascriptCallback)
+	fn, _ := jsCB.DeleteAndGet(id).(func(*JSValue))
 
 	if fn == nil {
 		return
 	}
-	if errMsg != nil {
-		fn(JSValue{}, errors.New(C.GoString(errMsg)))
-	} else {
-		fn(JSValue{ctx, v}, nil)
+	fn(newJSValue(typ, str, num))
+}
+
+//export jsSystemMessage
+func jsSystemMessage(viewID C.guint64, typ C.gint8, str *C.char, num C.double) {
+	if wv := getView(uint64(viewID)); wv != nil && wv.OnMessage != nil {
+		// TODO: optimize this, too many copies.
+		// using a channel here because this is executed inside the UI thread.
+		wv.msgs <- newJSValue(typ, str, num)
 	}
 }
 
-func (wv *WebView) RunJavaScript(script string, fn func(JSValue, error)) {
-	id := nextID()
-	jsCB.Set(id, JavascriptCallback(fn))
-	p := C.CString(script)
-	defer C.free(unsafe.Pointer(p))
-	C.execute_javascript(wv.wv, C.guint64(id), p)
-}
-
-// 	"unsafe"
-// 	"unsafe"
-// 	"errors"
-
-// 	"github.com/sqs/gojs"
-// )
-
-// func (wv *WebView) RunJavaScript(script string, resultCallback func(result *gojs.Value, err error)) {
-// 	var cCallback C.GAsyncReadyCallback
-// 	var userData C.gpointer
-// 	var err error
-// 	if resultCallback != nil {
-// 		callback := func(result *C.GAsyncResult) {
-// 			C.free(unsafe.Pointer(userData))
-// 			var jserr *C.GError
-// 			jsResult := C.webkit_web_view_run_javascript_finish(v.webView, result, &jserr)
-// 			if jsResult == nil {
-// 				defer C.g_error_free(jserr)
-// 				msg := C.GoString((*C.char)(jserr.message))
-// 				resultCallback(nil, errors.New(msg))
-// 				return
-// 			}
-// 			ctxRaw := gojs.RawGlobalContext(unsafe.Pointer(C.webkit_javascript_result_get_global_context(jsResult)))
-// 			jsValRaw := gojs.RawValue(unsafe.Pointer(C.webkit_javascript_result_get_value(jsResult)))
-// 			ctx := (*gojs.Context)(gojs.NewGlobalContextFrom(ctxRaw))
-// 			jsVal := ctx.NewValueFrom(jsValRaw)
-// 			resultCallback(jsVal, nil)
-// 		}
-// 		cCallback, userData, err = newGAsyncReadyCallback(callback)
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 	}
-// 	C.webkit_web_view_run_javascript(v.webView, (*C.gchar)(C.CString(script)), nil, cCallback, userData)
-// }
+// TODO: https://webkitgtk.org/reference/webkit2gtk/stable/WebKitUserContentManager.html
