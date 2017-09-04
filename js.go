@@ -35,20 +35,22 @@ func (wv *WebView) watchMessages() {
 			goto SEND
 		}
 
-		if in.CallbackID != 0 {
-			cb = func(v interface{}) *JSValue {
-				var out sysMsgOut
-				out.CallbackID, out.Value = in.CallbackID, v
-				b, err := json.Marshal(out)
-
-				if err != nil {
-					b = []byte(fmt.Sprintf("{cbID:%d,err:%q}", in.CallbackID, err.Error()))
-				}
-
-				return wv.RunJS("window._replyToSystemMessage(" + string(b) + ");")
-			}
-			m.val = in.Value
+		if in.CallbackID == 0 {
+			goto SEND
 		}
+		cb = func(v interface{}) *JSValue {
+			var out sysMsgOut
+			out.CallbackID, out.Value = in.CallbackID, v
+			b, err := json.Marshal(out)
+
+			if err != nil {
+				b = []byte(fmt.Sprintf("{cbID:%d,err:%q}", in.CallbackID, err.Error()))
+			}
+
+			return wv.RunJS("window._replyToSystemMessage(" + string(b) + ");")
+		}
+		m.val = in.Value
+
 	SEND:
 		wv.OnMessage(m, cb)
 	}
