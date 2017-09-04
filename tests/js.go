@@ -8,14 +8,15 @@ import (
 
 func main() {
 	s := webview.DefaultSettings
-	s.Offscreen = true
+	s.Offscreen = true // comment this to open an actual window
 	wv := webview.New("Test UI 0", &s)
-	wv.OnPageLoad = func(_ string) {
-		wv.RunJavaScript(`const vs = ["test"]; for(const v of vs) console.log(v); vs[0];`, func(v webview.JSValue, err error) {
-			log.Printf("%s: %v", v.Type(), v.AsString())
-			wv.Close()
-		})
-	}
+
 	wv.LoadHTML("<html><body>hi</body></html>")
+	v := wv.RunJS(`const vs = ["test"]; for(const v of vs) console.log(v); vs[0];`)
+	if v.Err() != nil {
+		panic(v.Err())
+	}
+	log.Printf("%s: %v", v.Type(), v.AsString())
+	wv.Close()
 	<-wv.Done()
 }
