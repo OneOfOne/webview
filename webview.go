@@ -33,6 +33,7 @@ type WebKitSettings struct {
 	EnableSmoothScrolling bool
 	EnableSpellChecking   bool
 	EnableFullscreen      bool
+	EnableLocalFileAccess bool
 
 	EnableJavaScript               bool
 	EnableJavaScriptCanOpenWindows bool
@@ -90,7 +91,7 @@ var (
 		Width:  1024,
 		Height: 768,
 
-		UserAgent: "webkit2gtk/" + runtime.Version(),
+		UserAgent: "OneOfOne-Go-WebView/" + runtime.Version(),
 	}
 )
 
@@ -106,6 +107,7 @@ func (s *Settings) c() *C.settings_t {
 	v.EnableSpellChecking = cbool(ws.EnableSpellChecking)
 
 	v.EnableFullscreen = cbool(ws.EnableFullscreen)
+	v.EnableLocalFileAccess = cbool(ws.EnableFullscreen)
 
 	v.EnableJavaScript = cbool(ws.EnableJavaScript)
 	v.EnableJavaScriptCanOpenWindows = cbool(ws.EnableJavaScriptCanOpenWindows)

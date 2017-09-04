@@ -95,6 +95,7 @@ typedef struct {
 	gboolean EnableSmoothScrolling;
 	gboolean EnableSpellChecking;
 	gboolean EnableFullscreen;
+	gboolean EnableLocalFileAccess;
 
 	gboolean EnableJavaScript;
 	gboolean EnableJavaScriptCanOpenWindows;
@@ -147,6 +148,7 @@ static inline WebKitWebView *init_window(GtkWidget *window, const char *title, c
 	webkit_settings_set_enable_frame_flattening(settings, s->EnableFrameFlattening);
 	webkit_settings_set_enable_smooth_scrolling(settings, s->EnableSmoothScrolling);
 	webkit_settings_set_enable_fullscreen(settings, s->EnableFullscreen);
+	webkit_settings_set_allow_file_access_from_file_urls(settings, s->EnableLocalFileAccess);
 
 
 	webkit_settings_set_enable_javascript(settings, s->EnableJavaScript);
