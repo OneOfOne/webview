@@ -9,6 +9,7 @@ import (
 func main() {
 	s := webview.DefaultSettings
 	s.Offscreen = true // comment this to open an actual window
+	s.WebKit.EnableLocalFileAccess = true
 	wv := webview.New("Test UI 0", &s)
 
 	wv.LoadHTML("<html><body>hi</body></html>")

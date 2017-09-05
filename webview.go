@@ -2,7 +2,7 @@ package webview
 
 /*
 #cgo CFLAGS: -Wall -O2 -Wno-unused-function -Wno-unused-variable -Werror -std=c11
-#cgo linux pkg-config: gtk+-3.0 webkit2gtk-4.0
+#cgo pkg-config: gtk+-3.0 webkit2gtk-4.0
 
 #include <stdlib.h>
 #include "helpers.h"
