@@ -11,6 +11,7 @@ extern void wvLoadFinished(guint64, char *);
 extern void inGtkMain(guint64);
 extern void jsCallback(guint64, gint8, char *, double);
 extern void jsSystemMessage(guint64, gint8, char *, double);
+extern void snapshotFinished(guint64 id, cairo_surface_t *surface, char * err);
 extern char * getSystemScript();
 
 static inline gboolean window_close_cb(GtkWidget *widget, GdkEvent *event, gpointer parent) {
@@ -96,6 +97,7 @@ typedef struct {
 	gboolean EnableSpellChecking;
 	gboolean EnableFullscreen;
 	gboolean EnableLocalFileAccess;
+	gboolean IgnoreTLSErrors;
 
 	gboolean EnableJavaScript;
 	gboolean EnableJavaScriptCanOpenWindows;
@@ -131,7 +133,7 @@ static inline WebKitUserContentManager *init_content_manager(guint64 parent) {
 		NULL, NULL);
 
 	webkit_user_content_manager_add_script(cm, js);
-	free(str);
+	g_free(str);
 
 	return cm;
 }
@@ -176,6 +178,10 @@ static inline WebKitWebView *init_window(GtkWidget *window, const char *title, c
 
 	if(s->EnableSpellChecking) {
 		webkit_web_context_set_spell_checking_enabled(webkit_web_view_get_context(wv), s->EnableSpellChecking);
+	}
+
+	if(s->IgnoreTLSErrors) {
+		webkit_web_context_set_tls_errors_policy(webkit_web_view_get_context(wv), WEBKIT_TLS_ERRORS_POLICY_IGNORE);
 	}
 
 	g_signal_connect(window, "delete-event", G_CALLBACK(window_close_cb), (void*)parent);
@@ -226,7 +232,7 @@ static inline void javascript_finished (GObject *object, GAsyncResult *result, g
 		jsCallback((guint64)data, typ, NULL, num);
 	}
 
-	webkit_javascript_result_unref (js_result);
+	webkit_javascript_result_unref(js_result);
 }
 
 static inline void execute_javascript(WebKitWebView *wv, guint64 cbID, const char *js) {
@@ -249,4 +255,26 @@ static inline void load_html(WebKitWebView *wv, const char *html) {
 static inline void set_prop(WebKitSettings *s, const char * prop, gboolean v) {
 	g_object_set (G_OBJECT(s), prop, v, NULL);
 }
+
+static inline void snapshot_finish_cb(WebKitWebView *webview, GAsyncResult *res, guint64 p) {
+	GError *err = NULL;
+	cairo_surface_t *surface = webkit_web_view_get_snapshot_finish(WEBKIT_WEB_VIEW(webview), res, &err);
+	if (err) {
+		snapshotFinished(p, NULL, err->message);
+		g_error_free(err);
+		return;
+	}
+
+	snapshotFinished(p, surface, NULL);
+}
+
+static inline void snapshot(WebKitWebView *wv, guint64 p) {
+	webkit_web_view_get_snapshot(wv,
+		WEBKIT_SNAPSHOT_REGION_FULL_DOCUMENT,
+		WEBKIT_SNAPSHOT_OPTIONS_NONE, // WEBKIT_SNAPSHOT_OPTIONS_TRANSPARENT_BACKGROUND ?
+		NULL,
+		(GAsyncReadyCallback)snapshot_finish_cb,
+		(gpointer)p);
+}
+
 #endif /* WEBVIEW_H */

@@ -21,7 +21,7 @@ import (
 var (
 	AutoQuitGTK = true
 
-	Debug = false
+	Debug = true
 
 	ErrWindowIsClosed = errors.New("WebView is already closed.")
 )
@@ -42,6 +42,8 @@ type WebKitSettings struct {
 	EnableWriteConsoleMessagesToStdout bool
 
 	EnableWebGL bool
+
+	IgnoreTLSErrors bool
 }
 
 type WebKitBoolProperty struct {
@@ -80,6 +82,8 @@ var (
 		EnableWriteConsoleMessagesToStdout: true,
 
 		EnableWebGL: false,
+
+		IgnoreTLSErrors: true,
 	}
 
 	DefaultSettings = Settings{
@@ -115,6 +119,7 @@ func (s *Settings) c() *C.settings_t {
 
 	v.EnableWriteConsoleMessagesToStdout = cbool(ws.EnableWriteConsoleMessagesToStdout)
 	v.EnableWebGL = cbool(ws.EnableWebGL)
+	v.IgnoreTLSErrors = cbool(ws.IgnoreTLSErrors)
 
 	v.Decorated = cbool(s.Decorated)
 	v.Resizable = cbool(s.Resizable)
@@ -143,6 +148,7 @@ type WebView struct {
 	done    chan struct{}
 	started chan struct{}
 	msgs    chan *JSValue
+	// snapshots chan *snapshot
 
 	win *C.GtkWidget
 	wv  *C.WebKitWebView
@@ -161,6 +167,7 @@ func New(windowTitle string, s *Settings) *WebView {
 		msgs:    make(chan *JSValue, 10),
 		loadCh:  make(chan string),
 	}
+
 	runtime.SetFinalizer(wv, func(wv *WebView) { wv.Close() })
 
 	wv.id = addView(wv)
@@ -230,11 +237,10 @@ func (wv *WebView) Done() <-chan struct{} { return wv.done }
 
 func (wv *WebView) exec(fn func()) {
 	ch := make(chan struct{})
-	wv.q <- func() {
+	gtk_idle_add(func(_ unsafe.Pointer) {
 		fn()
 		close(ch)
-	}
-	C.idle_add(C.guint64(wv.id))
+	})
 	<-ch
 }
 

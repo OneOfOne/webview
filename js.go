@@ -5,6 +5,7 @@ package webview
 #include "helpers.h"
 */
 import "C"
+
 import (
 	"encoding/json"
 	"fmt"

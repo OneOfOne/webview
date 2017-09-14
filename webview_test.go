@@ -1,7 +1,9 @@
 package webview
 
 import (
+	"bytes"
 	"html/template"
+	"image/png"
 	"log"
 	"net"
 	"net/http"
@@ -72,7 +74,7 @@ func TestUI(t *testing.T) {
 	wv1.LoadHTML(LoadingDoc)
 
 	v := wv1.RunJS(`const o = {v: [1,2,3], u: "s"}; o`)
-	if err := v.Err(); err != nil {
+	if err = v.Err(); err != nil {
 		t.Errorf("js error: %v", err)
 		// return
 	}
@@ -89,6 +91,24 @@ func TestUI(t *testing.T) {
 		log.Printf("omg reply from javascript! %s", v.val)
 	}
 	wv1.RunJS(`postSystemMessage("hello from js", function(v) { console.log('js got:', v); return {reply_back_from_js: "woooo"}; });`)
+	img, err := wv1.Snapshot()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var buf bytes.Buffer
+	if err = png.Encode(&buf, img); err != nil {
+		t.Error(err)
+		return
+	}
+
+	dimg, err := png.Decode(&buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	t.Logf("%#+v", dimg.Bounds())
 	// <-wv0.Done()
 	<-wv1.Done()
 }
