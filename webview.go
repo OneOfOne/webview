@@ -295,6 +295,7 @@ func checkStartGUI() {
 	}
 	mainMux.Unlock()
 }
+
 func addView(wv *WebView) uint64 {
 	checkStartGUI()
 	id := nextID()

@@ -256,25 +256,4 @@ static inline void set_prop(WebKitSettings *s, const char * prop, gboolean v) {
 	g_object_set (G_OBJECT(s), prop, v, NULL);
 }
 
-static inline void snapshot_finish_cb(WebKitWebView *webview, GAsyncResult *res, guint64 p) {
-	GError *err = NULL;
-	cairo_surface_t *surface = webkit_web_view_get_snapshot_finish(WEBKIT_WEB_VIEW(webview), res, &err);
-	if (err) {
-		snapshotFinished(p, NULL, err->message);
-		g_error_free(err);
-		return;
-	}
-
-	snapshotFinished(p, surface, NULL);
-}
-
-static inline void snapshot(WebKitWebView *wv, guint64 p) {
-	webkit_web_view_get_snapshot(wv,
-		WEBKIT_SNAPSHOT_REGION_FULL_DOCUMENT,
-		WEBKIT_SNAPSHOT_OPTIONS_NONE, // WEBKIT_SNAPSHOT_OPTIONS_TRANSPARENT_BACKGROUND ?
-		NULL,
-		(GAsyncReadyCallback)snapshot_finish_cb,
-		(gpointer)p);
-}
-
 #endif /* WEBVIEW_H */

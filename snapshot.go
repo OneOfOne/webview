@@ -11,7 +11,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image"
-	"log"
 	"unsafe"
 )
 
@@ -75,19 +74,9 @@ func (wv *WebView) Snapshot() (img *image.RGBA, err error) {
 	wv.exec(func() {
 		C.webkit_web_view_get_snapshot(wv.wv,
 			C.WEBKIT_SNAPSHOT_REGION_FULL_DOCUMENT,
-			C.WEBKIT_SNAPSHOT_OPTIONS_NONE, // WEBKIT_SNAPSHOT_OPTIONS_TRANSPARENT_BACKGROUND ?
+			C.WEBKIT_SNAPSHOT_OPTIONS_NONE,
 			nil, ccb, data)
 	})
 	<-ch
 	return
-}
-
-//export snapshotFinished
-func snapshotFinished(p C.guint64, surface *C.cairo_surface_t, err *C.char) {
-	if Debug && err != nil {
-		log.Printf("snapshotFinished (%d): %s", p, C.GoString(err))
-	}
-	if wv := getView(uint64(p)); wv != nil {
-
-	}
 }

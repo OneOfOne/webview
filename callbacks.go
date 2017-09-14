@@ -7,17 +7,21 @@ package webview
 #include <gio/gio.h>
 extern void _go_callback(void* data, void *res);
 
-static inline void _gasync_callback(GObject *source_object, GAsyncResult *res, void* user_data) {
+static inline void _gasync_callback(GObject *source_object, GAsyncResult *res, gpointer user_data) {
 	(void)source_object;
 	_go_callback(user_data, res);
 }
 
-static inline void _callback(void* user_data) {
+static inline void _callback(gpointer user_data) {
 	_go_callback(user_data, NULL);
 }
 
-static inline void idle_add_cb(void* data) {
+static inline void idle_add_cb(gpointer data) {
 	g_idle_add((GSourceFunc)_callback, data);
+}
+
+static inline GAsyncReadyCallback _get_gasync_callback() {
+	return (GAsyncReadyCallback)_gasync_callback;
 }
 */
 import "C"
@@ -26,6 +30,8 @@ import (
 	"log"
 	"unsafe"
 )
+
+var gasyncCallback = C._get_gasync_callback()
 
 type refCallback struct {
 	fn func(p unsafe.Pointer)
@@ -39,17 +45,17 @@ func _go_callback(data unsafe.Pointer, res unsafe.Pointer) {
 	cb.fn(res)
 }
 
-func funcToCallback(fn func(p unsafe.Pointer)) unsafe.Pointer {
+func funcToPtr(fn func(p unsafe.Pointer)) C.gpointer {
 	data := C.malloc(C.size_t(unsafe.Sizeof(refCallback{})))
 	cb := (*refCallback)(data)
 	cb.fn = fn
-	return data
+	return C.gpointer(data)
 }
 
 func newGAsyncCallback(fn func(p unsafe.Pointer)) (C.GAsyncReadyCallback, C.gpointer) {
-	return C.GAsyncReadyCallback(C._gasync_callback), C.gpointer(funcToCallback(fn))
+	return gasyncCallback, funcToPtr(fn)
 }
 
 func gtk_idle_add(fn func(p unsafe.Pointer)) {
-	C.idle_add_cb(funcToCallback(fn))
+	C.idle_add_cb(funcToPtr(fn))
 }
