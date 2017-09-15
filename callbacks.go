@@ -27,7 +27,6 @@ static inline GAsyncReadyCallback _get_gasync_callback() {
 import "C"
 
 import (
-	"log"
 	"unsafe"
 )
 
@@ -41,7 +40,7 @@ type refCallback struct {
 func _go_callback(data unsafe.Pointer, res unsafe.Pointer) {
 	defer C.free(data)
 	cb := (*refCallback)(data)
-	log.Printf("%p %p", data, res)
+	// log.Printf("%p %p", data, res)
 	cb.fn(res)
 }
 

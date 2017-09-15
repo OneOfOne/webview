@@ -3,6 +3,10 @@ package webview
 /*
 #include <stdlib.h>
 #include "helpers.h"
+
+static inline gboolean jsbool(JSGlobalContextRef ctx, JSValueRef val) {
+	return JSValueToBoolean(ctx, val);
+}
 */
 import "C"
 
@@ -58,14 +62,62 @@ func (wv *WebView) watchMessages() {
 }
 
 func (wv *WebView) RunJSAsync(script string) <-chan *JSValue {
-	p := C.CString(script)
-	defer C.free(unsafe.Pointer(p))
-	id := nextID()
+	js := C.CString(script)
+	defer C.free(unsafe.Pointer(js))
+
 	ch := make(chan *JSValue, 1)
-	jsCB.Set(id, func(v *JSValue) {
-		ch <- v
+	cb := func(p unsafe.Pointer) {
+		var gerr *C.GError
+		jsres := C.webkit_web_view_run_javascript_finish(wv.wv, (*C.GAsyncResult)(p), &gerr)
+		if gerr != nil {
+			ch <- &JSValue{
+				typ: JSError,
+				val: C.GoString((*C.char)(gerr.message)),
+			}
+			C.g_error_free(gerr)
+			return
+		}
+		defer C.webkit_javascript_result_unref(jsres)
+
+		ctx := C.webkit_javascript_result_get_global_context(jsres)
+		val := C.webkit_javascript_result_get_value(jsres)
+
+		switch t := JSType(C.JSValueGetType(ctx, val)); t {
+		case JSString:
+			sv := C.js_get_str(C.JSValueToStringCopy(ctx, val, nil))
+			ch <- &JSValue{
+				typ: t,
+				val: C.GoString(sv),
+			}
+			C.g_free(C.gpointer(sv))
+
+		case JSObject:
+			sv := C.js_get_str(C.JSValueCreateJSONString(ctx, val, 0, nil))
+			ch <- &JSValue{
+				typ: t,
+				val: C.GoString(sv),
+			}
+			C.g_free(C.gpointer(sv))
+
+		case JSBoolean:
+			ch <- &JSValue{
+				typ: t,
+				val: C.jsbool(ctx, val) == 1,
+			}
+
+		case JSNumber:
+			ch <- &JSValue{
+				typ: t,
+				val: float64(C.JSValueToNumber(ctx, val, nil)),
+			}
+		default: // void
+			close(ch)
+		}
+	}
+	ccb, data := newGAsyncCallback(cb)
+	wv.exec(func() {
+		C.webkit_web_view_run_javascript(wv.wv, (*C.gchar)(js), nil, ccb, data)
 	})
-	C.execute_javascript(wv.wv, C.guint64(id), p)
 	return ch
 }
 
@@ -104,17 +156,6 @@ func (t JSType) String() string {
 	default:
 		return "<invalid>"
 	}
-}
-
-//export jsCallback
-func jsCallback(cbID C.guint64, typ C.gint8, str *C.char, num C.double) {
-	id := uint64(cbID)
-	fn, _ := jsCB.DeleteAndGet(id).(func(*JSValue))
-
-	if fn == nil {
-		return
-	}
-	fn(newJSValue(typ, str, num))
 }
 
 //export jsSystemMessage

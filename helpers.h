@@ -9,7 +9,6 @@ extern void closeHandler(guint64);
 extern void startHandler(guint64);
 extern void wvLoadFinished(guint64, char *);
 extern void inGtkMain(guint64);
-extern void jsCallback(guint64, gint8, char *, double);
 extern void jsSystemMessage(guint64, gint8, char *, double);
 extern void snapshotFinished(guint64 id, cairo_surface_t *surface, char * err);
 extern char * getSystemScript();
@@ -196,47 +195,6 @@ static inline WebKitWebView *init_window(GtkWidget *window, const char *title, c
 	gtk_widget_show_all(window);
 
 	return wv;
-}
-
-static inline void javascript_finished (GObject *object, GAsyncResult *result, gpointer data){
-	GError *error = NULL;
-	WebKitJavascriptResult *js_result = webkit_web_view_run_javascript_finish (WEBKIT_WEB_VIEW (object), result, &error);
-	if (!js_result) {
-		jsCallback((guint64)data, -1, error->message, 0);
-		g_error_free (error);
-		return;
-	}
-
-	JSGlobalContextRef ctx = webkit_javascript_result_get_global_context (js_result);
-	JSValueRef val = webkit_javascript_result_get_value (js_result);
-	guint8 typ = JSValueGetType(ctx, val);
-
-	double num = 0;
-	JSStringRef sv = NULL;
-
-	if(typ == kJSTypeString) {
-		sv = JSValueToStringCopy (ctx, val, NULL);
-	} else if(typ == kJSTypeBoolean) {
-		num = JSValueToBoolean(ctx, val);
-	} else if(typ == kJSTypeNumber) {
-		num = JSValueToNumber(ctx, val, NULL);
-	} else if(typ == kJSTypeObject) {
-		sv = JSValueCreateJSONString(ctx, val, 0, NULL);
-	}
-
-	if(sv != NULL) {
-		char *str = js_get_str(sv);
-		jsCallback((guint64)data, typ, str, num);
-		g_free(str);
-	} else {
-		jsCallback((guint64)data, typ, NULL, num);
-	}
-
-	webkit_javascript_result_unref(js_result);
-}
-
-static inline void execute_javascript(WebKitWebView *wv, guint64 cbID, const char *js) {
-	webkit_web_view_run_javascript(wv, js, NULL, javascript_finished, (gpointer) cbID);
 }
 
 static inline void close_window(WebKitWebView *wv, GtkWidget *win) {
