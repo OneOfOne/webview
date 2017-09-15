@@ -8,7 +8,6 @@
 extern void closeHandler(guint64);
 extern void startHandler(guint64);
 extern void wvLoadFinished(guint64, char *);
-extern void inGtkMain(guint64);
 extern void jsSystemMessage(guint64, gint8, char *, double);
 extern void snapshotFinished(guint64 id, cairo_surface_t *surface, char * err);
 extern char * getSystemScript();
@@ -33,9 +32,6 @@ static inline gboolean wv_context_menu_cb(WebKitWebView *webview,
 
 	return TRUE;
 }
-
-static inline void idle_add(guint64 v) { g_idle_add((GSourceFunc)inGtkMain, (gpointer)v); }
-static inline void timeout_add(guint64 v) { g_timeout_add(100, (GSourceFunc)inGtkMain, (gpointer)v); }
 
 static inline void wv_load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gpointer parent) {
 	switch (load_event) {

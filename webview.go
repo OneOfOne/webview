@@ -143,7 +143,6 @@ func cbool(v bool) C.gboolean {
 
 type WebView struct {
 	id uint64
-	q  chan func()
 
 	done    chan struct{}
 	started chan struct{}
@@ -161,7 +160,6 @@ type WebView struct {
 
 func New(windowTitle string, s *Settings) *WebView {
 	wv := &WebView{
-		q:       make(chan func(), 1),
 		done:    make(chan struct{}),
 		started: make(chan struct{}),
 		msgs:    make(chan *JSValue, 10),
@@ -317,23 +315,6 @@ func delView(id uint64) {
 func getView(id uint64) *WebView {
 	wv, _ := views.Get(id).(*WebView)
 	return wv
-}
-
-//export inGtkMain
-func inGtkMain(p C.guint64) {
-	if Debug {
-		log.Printf("inGtkMain (%d)", p)
-	}
-
-	if wv := getView(uint64(p)); wv != nil {
-		select {
-		case fn := <-wv.q:
-			fn()
-		default:
-			return
-		}
-	}
-
 }
 
 //export closeHandler
