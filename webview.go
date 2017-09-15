@@ -21,7 +21,7 @@ import (
 var (
 	AutoQuitGTK = true
 
-	Debug = true
+	Debug = false
 
 	ErrWindowIsClosed = errors.New("WebView is already closed.")
 )

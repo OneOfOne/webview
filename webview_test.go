@@ -46,6 +46,8 @@ func init() {
 }
 
 func TestUI(t *testing.T) {
+	Debug = testing.Verbose()
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		log.Fatal(err)
