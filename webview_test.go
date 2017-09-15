@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"os/user"
 	"testing"
 )
@@ -53,9 +52,11 @@ func TestUI(t *testing.T) {
 	}
 	defer ln.Close()
 
+	wv0 := New("Hello webkit2gtk", nil)
+
 	go func() {
 		http.HandleFunc("/exit", func(w http.ResponseWriter, r *http.Request) {
-			os.Exit(0)
+			wv0.Close()
 		})
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			u, _ := user.Current()
@@ -64,8 +65,7 @@ func TestUI(t *testing.T) {
 		log.Fatal(http.Serve(ln, nil))
 	}()
 
-	// wv0 := New("Hello webkit2gtk", nil)
-	// t.Logf("loaded: %s", wv0.LoadURI("http://"+ln.Addr().String()))
+	t.Logf("loaded: %s", wv0.LoadURI("http://"+ln.Addr().String()))
 
 	s := DefaultSettings
 	//s.Decorated, s.Fullscreen = false, true
@@ -109,7 +109,7 @@ func TestUI(t *testing.T) {
 		return
 	}
 	t.Logf("%#+v", dimg.Bounds())
-	// <-wv0.Done()
+	<-wv0.Done()
 	<-wv1.Done()
 }
 
