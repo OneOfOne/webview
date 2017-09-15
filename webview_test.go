@@ -14,6 +14,7 @@ import (
 var tmpl = template.Must(template.New("").Parse(`
 <html>
 	<head>
+		<title>something cool</title>
 		<style>
 		* { margin: 0; padding: 0; box-sizing: border-box; font-family: Helvetica, Arial, sans-serif; }
 		body { color: #ffffff; background-color: #03a9f4; text-decoration: uppercase; font-size: 24px; }
@@ -68,7 +69,6 @@ func TestUI(t *testing.T) {
 	}()
 
 	t.Logf("loaded: %s", wv0.LoadURI("http://"+ln.Addr().String()))
-
 	s := DefaultSettings
 	//s.Decorated, s.Fullscreen = false, true
 	wv1 := New("Spinner", &s)
@@ -92,6 +92,7 @@ func TestUI(t *testing.T) {
 		v := cb("hello from go")
 		log.Printf("omg reply from javascript! %s", v.val)
 	}
+
 	wv1.RunJS(`postSystemMessage("hello from js", function(v) { console.log('js got:', v); return {reply_back_from_js: "woooo"}; });`)
 	img, err := wv1.Snapshot()
 	if err != nil {

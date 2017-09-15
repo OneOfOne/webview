@@ -47,7 +47,10 @@ static inline void wv_load_changed_cb(WebKitWebView *wv, WebKitLoadEvent load_ev
 		}
 }
 
+static inline gboolean wv_load_failed_cb(WebKitWebView *wv, WebKitLoadEvent load_event, gchar *failing_uri,
+	GError* error, gpointer user_data) {
 
+}
 static inline char * js_get_str(JSStringRef sv) {
 	gsize len = JSStringGetMaximumUTF8CStringSize (sv);
 	gchar *str = (gchar *)g_malloc (len);
@@ -196,14 +199,6 @@ static inline WebKitWebView *init_window(GtkWidget *window, const char *title, c
 static inline void close_window(WebKitWebView *wv, GtkWidget *win) {
 	webkit_web_view_try_close(wv);
 	gtk_widget_destroy(win);
-}
-
-static inline void load_uri(WebKitWebView *wv, const char *uri) {
-	webkit_web_view_load_uri(wv, uri);
-}
-
-static inline void load_html(WebKitWebView *wv, const char *html) {
-	webkit_web_view_load_html(wv, html, "");
 }
 
 static inline void set_prop(WebKitSettings *s, const char * prop, gboolean v) {

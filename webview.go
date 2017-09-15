@@ -191,25 +191,26 @@ func New(windowTitle string, s *Settings) *WebView {
 }
 
 func (wv *WebView) LoadHTML(html string) string {
+	chtml := C.CString(html)
+	defer C.free(unsafe.Pointer(chtml))
 	wv.loadMux.Lock()
 	defer wv.loadMux.Unlock()
 
 	wv.exec(func() {
-		html := C.CString(html)
-		defer C.free(unsafe.Pointer(html))
-		C.load_html(wv.wv, html)
+		C.webkit_web_view_load_html(wv.wv, (*C.gchar)(chtml), nil)
 	})
 
 	return <-wv.loadCh
 }
 
 func (wv *WebView) LoadURI(uri string) string {
+	curi := C.CString(uri)
+	defer C.free(unsafe.Pointer(curi))
 	wv.loadMux.Lock()
 	defer wv.loadMux.Unlock()
+
 	wv.exec(func() {
-		uri := C.CString(uri)
-		defer C.free(unsafe.Pointer(uri))
-		C.load_uri(wv.wv, uri)
+		C.webkit_web_view_load_uri(wv.wv, (*C.gchar)(curi))
 	})
 
 	return <-wv.loadCh
